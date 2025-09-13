@@ -1,0 +1,47 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score
+
+# === Step 1: Load Cleaned Data ===
+df = pd.read_csv("cleaned_combine.csv")
+
+# === Step 2: Select Combine Metric Columns ===
+combine_metrics = ["40yd", "Vertical", "Bench", "Broad Jump", "3Cone", "Shuttle", "Height_in", "Wt"]
+df_clustering = df[combine_metrics].dropna()
+
+# === Step 3: Normalize Features ===
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df_clustering)
+
+# === Step 4: Apply K-Means Clustering ===
+k = 4  # You can try different values for k and use silhouette score to compare
+kmeans = KMeans(n_clusters=k, random_state=42)
+clusters = kmeans.fit_predict(X_scaled)
+
+# Add cluster labels back to original dataframe
+df_result = df_clustering.copy()
+df_result["Cluster"] = clusters
+
+# === Step 5: Dimensionality Reduction with PCA ===
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+# === Step 6: Plot Clusters ===
+plt.figure(figsize=(10, 6))
+for i in range(k):
+    plt.scatter(X_pca[clusters == i, 0], X_pca[clusters == i, 1], label=f"Cluster {i}", alpha=0.7)
+
+plt.title("NFL Combine Player Clusters (PCA Projection)")
+plt.xlabel("PCA Component 1")
+plt.ylabel("PCA Component 2")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# === Step 7: Evaluate with Silhouette Score ===
+score = silhouette_score(X_scaled, clusters)
+print(f"\nSilhouette Score (k={k}): {score:.3f}")
