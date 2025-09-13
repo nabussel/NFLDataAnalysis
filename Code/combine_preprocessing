@@ -1,0 +1,65 @@
+import pandas as pd
+import numpy as np
+import os
+
+# === Step 1: Load CSV Files ===
+# List all your Combine CSV file paths (update paths if needed)
+combine_files = [
+    "2000_combine.csv",
+    "2001_combine.csv",
+    "2002_combine.csv",
+    "2003_combine.csv",
+    "2004_combine.csv",
+    "2005_combine.csv",
+    "2006_combine.csv",
+    "2007_combine.csv",
+    "2008_combine.csv",
+    "2009_combine.csv",
+    "2011_combine.csv",
+    "2012_combine.csv",
+    "2013_combine.csv",
+    "2014_combine.csv",
+    "2015_combine.csv",
+    "2016_combine.csv",
+    "2017_combine.csv",
+    "2018_combine.csv",
+    "2019_combine.csv",
+    "2020_combine.csv",
+    "2021_combine.csv",
+    "2022_combine.csv"
+]
+
+# Load and combine all years
+combine_dfs = []
+for file in combine_files:
+    df = pd.read_csv(file)
+    df["Year"] = int(os.path.basename(file).split("_")[0])  # Extract year from filename
+    combine_dfs.append(df)
+
+combine_df = pd.concat(combine_dfs, ignore_index=True)
+
+# === Step 2: Convert Height to Inches ===
+def convert_height(ht):
+    try:
+        feet, inches = map(int, ht.split('-'))
+        return feet * 12 + inches
+    except:
+        return np.nan
+
+combine_df["Height_in"] = combine_df["Ht"].apply(convert_height)
+
+# === Step 3: Filter to Relevant Positions ===
+relevant_positions = ['RB', 'WR', 'CB', 'LB', 'TE', 'QB', 'S']
+combine_df = combine_df[combine_df["Pos"].isin(relevant_positions)]
+
+# === Step 4: Drop Rows with Too Many Missing Combine Metrics ===
+key_metrics = ["40yd", "Vertical", "Bench", "Broad Jump", "3Cone", "Shuttle", "Height_in", "Wt"]
+combine_df = combine_df.dropna(subset=key_metrics, thresh=4)
+
+# === Step 5: Preview the Cleaned Data ===
+print("Cleaned Combine Dataset (first 10 rows):")
+print(combine_df[["Player", "Pos", "Height_in", "Wt", "40yd", "Vertical", "Bench", "Broad Jump", "3Cone", "Shuttle", "Year"]].head(10))
+
+# Optional: Save to CSV for clustering step later
+combine_df.to_csv("cleaned_combine.csv", index=False)
+print("\nSaved cleaned dataset as 'cleaned_combine.csv'")

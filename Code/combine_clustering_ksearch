@@ -1,0 +1,267 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.decomposition import PCA
+
+#Load and Prepare Data 
+df = pd.read_csv("cleaned_combine.csv")
+combine_metrics = ["40yd", "Vertical", "Bench", "Broad Jump", "3Cone", "Shuttle", "Height_in", "Wt"]
+df_clustering = df[combine_metrics].dropna()
+
+#Normalize the Data 
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df_clustering)
+
+# Elbow Method (Inertia Plot) 
+inertias = []
+k_range = range(1, 11)
+
+for k in k_range:
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    kmeans.fit(X_scaled)
+    inertias.append(kmeans.inertia_)
+
+plt.figure(figsize=(8, 5))
+plt.plot(k_range, inertias, marker='o')
+plt.title("Elbow Method for Optimal k")
+plt.xlabel("Number of Clusters (k)")
+plt.ylabel("Inertia (Within-Cluster Sum of Squares)")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Silhouette Score Search for Best k 
+silhouette_scores = []
+k_values = list(range(2, 11))
+
+for k in k_values:
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(X_scaled)
+    score = silhouette_score(X_scaled, labels)
+    silhouette_scores.append(score)
+    print(f"K={k}, Silhouette Score = {score:.4f}")
+
+# Plot Silhouette Scores
+plt.figure(figsize=(8, 5))
+plt.plot(k_values, silhouette_scores, marker='o')
+plt.title("Silhouette Score vs. Number of Clusters (k)")
+plt.xlabel("k (Number of Clusters)")
+plt.ylabel("Silhouette Score")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+#Use Best k for Final Clustering
+best_k = k_values[silhouette_scores.index(max(silhouette_scores))]
+print(f"\n\u2705 Best number of clusters: {best_k} (highest silhouette score)")
+
+kmeans = KMeans(n_clusters=best_k, random_state=42, n_init=10)
+final_labels = kmeans.fit_predict(X_scaled)
+
+#PCA Projection for Visualization 
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+plt.figure(figsize=(10, 6))
+for i in range(best_k):
+    plt.scatter(X_pca[final_labels == i, 0], X_pca[final_labels == i, 1], label=f"Cluster {i}", alpha=0.7)
+
+plt.title(f"NFL Combine Clusters (k={best_k}, PCA Projection)")
+plt.xlabel("PCA Component 1")
+plt.ylabel("PCA Component 2")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+#Add Centroids to PCA Plot 
+centroids_pca = pca.transform(kmeans.cluster_centers_)
+
+plt.figure(figsize=(10, 6))
+for i in range(best_k):
+    plt.scatter(X_pca[final_labels == i, 0], X_pca[final_labels == i, 1], label=f"Cluster {i}", alpha=0.6)
+
+plt.scatter(centroids_pca[:, 0], centroids_pca[:, 1], c='black', s=200, marker='X', label='Centroids')
+
+plt.title(f"NFL Combine Clusters with Centroids (k={best_k}, PCA Projection)")
+plt.xlabel("PCA Component 1")
+plt.ylabel("PCA Component 2")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+#Save Clustered Data
+df_cleaned = df.loc[df_clustering.index].copy()
+df_cleaned["Cluster"] = final_labels
+df_cleaned.to_csv("clustered_players.csv", index=False)
+print("\n[INFO] Clustered player data saved to 'clustered_players.csv'")
+
+# Radar Plot for k = 2
+metrics = combine_metrics
+num_vars = len(metrics)
+angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+angles += angles[:1]  
+
+cluster_means = df_cleaned.groupby("Cluster")[metrics].mean()
+normalized_means = (cluster_means - cluster_means.min()) / (cluster_means.max() - cluster_means.min())
+
+for cluster_id in normalized_means.index:
+    values = normalized_means.loc[cluster_id].tolist()
+    values += values[:1]
+
+    plt.figure(figsize=(6, 5))
+    ax = plt.subplot(111, polar=True)
+    ax.plot(angles, values, linewidth=2)
+    ax.fill(angles, values, alpha=0.25)
+
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(metrics)
+    ax.set_title(f"Radar Plot – Cluster {cluster_id} (k = 2)", y=1.08)
+    plt.tight_layout()
+    plt.show()
+
+# Overlay Radar Plot for k = 2 
+plt.figure(figsize=(8, 6))
+ax = plt.subplot(111, polar=True)
+
+for cluster_id in normalized_means.index:
+    values = normalized_means.loc[cluster_id].tolist()
+    values += values[:1]  
+    ax.plot(angles, values, label=f"Cluster {cluster_id}", linewidth=2)
+    ax.fill(angles, values, alpha=0.1)
+
+ax.set_xticks(angles[:-1])
+ax.set_xticklabels(metrics)
+ax.set_title("Radar Plot – Normalized Metrics (k = 2)", y=1.08)
+plt.legend(loc='upper right', bbox_to_anchor=(1.1, 1.1))
+plt.tight_layout()
+plt.show()
+
+
+#Percentage Heatmap for k = 2 
+position_cluster_matrix = pd.crosstab(df_cleaned["Pos"], df_cleaned["Cluster"])
+pos_dist_pct = position_cluster_matrix.div(position_cluster_matrix.sum(axis=1), axis=0).round(2) * 100
+
+print("\n[INFO] Position Distribution by Cluster (k = 2):")
+print(position_cluster_matrix)
+print("\n[INFO] Position Distribution % by Cluster (k = 2):")
+print(pos_dist_pct)
+
+plt.figure(figsize=(10, 6))
+sns.heatmap(pos_dist_pct, annot=True, fmt='.0f', cmap='OrRd')
+plt.title("Position % per Cluster (k = 2)")
+plt.xlabel("Cluster")
+plt.ylabel("Position")
+plt.tight_layout()
+plt.show()
+
+
+
+# Pseudo-Confusion Matrix (Position vs Cluster) 
+position_cluster_matrix = pd.crosstab(df_cleaned["Pos"], df_cleaned["Cluster"])
+print("\n[INFO] Position Distribution by Cluster:")
+print(position_cluster_matrix)
+
+#Heatmap of Position Distribution 
+plt.figure(figsize=(10, 6))
+sns.heatmap(position_cluster_matrix, annot=True, fmt='d', cmap='YlGnBu', cbar=True)
+
+plt.title("Position Distribution Across Clusters")
+plt.xlabel("Cluster")
+plt.ylabel("Position")
+plt.tight_layout()
+plt.show()
+
+#PCA + Position Distribution for k = 3 and k = 4 
+test_ks = [3, 4, 5, 6]
+
+for k in test_ks:
+    # Run KMeans for this k
+    kmeans_test = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels_test = kmeans_test.fit_predict(X_scaled)
+    
+    # PCA projection
+    X_pca_test = pca.transform(X_scaled)
+    centroids_pca_test = pca.transform(kmeans_test.cluster_centers_)
+    
+    # Plot PCA with centroids
+    plt.figure(figsize=(10, 6))
+    for i in range(k):
+        plt.scatter(X_pca_test[labels_test == i, 0], X_pca_test[labels_test == i, 1], label=f"Cluster {i}", alpha=0.6)
+    
+    plt.scatter(centroids_pca_test[:, 0], centroids_pca_test[:, 1], c='black', s=200, marker='X', label='Centroid')
+    plt.title(f"PCA Projection of NFL Combine Clusters (k = {k})")
+    plt.xlabel("PCA Component 1")
+    plt.ylabel("PCA Component 2")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # Create clean copy of df for current cluster labels
+    df_k_test = df.loc[df_clustering.index].copy()
+    df_k_test["Cluster"] = labels_test
+
+    # Position distribution table
+    pos_dist = pd.crosstab(df_k_test["Pos"], df_k_test["Cluster"])
+    print(f"\n[INFO] Position Distribution for k = {k}")
+    print(pos_dist)
+
+    # Heatmap
+    plt.figure(figsize=(10, 6))
+    sns.heatmap(pos_dist, annot=True, fmt='d', cmap='YlGnBu')
+    plt.title(f"Position Distribution Heatmap (k = {k})")
+    plt.xlabel("Cluster")
+    plt.ylabel("Position")
+    plt.tight_layout()
+    plt.show()
+
+    pos_dist_pct = pos_dist.div(pos_dist.sum(axis=1), axis=0).round(2) * 100
+    print(f"\n[INFO] Position Distribution (%) for k = {k}")
+    print(pos_dist_pct)
+
+    plt.figure(figsize=(10, 6))
+    sns.heatmap(pos_dist_pct, annot=True, fmt='.0f', cmap='OrRd')
+    plt.title(f"Position % per Cluster (k = {k})")
+    plt.xlabel("Cluster")
+    plt.ylabel("Position")
+    plt.tight_layout()
+    plt.show()
+
+       #Radar Plot of Cluster Averages 
+    metrics = combine_metrics
+    num_vars = len(metrics)
+    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+    angles += angles[:1]  
+
+    # Create new DataFrame to compute cluster averages
+    df_clustered = df.loc[df_clustering.index].copy()
+    df_clustered["Cluster"] = labels_test
+    cluster_means = df_clustered.groupby("Cluster")[metrics].mean()
+
+    # Normalize values for radar display
+    normalized_means = (cluster_means - cluster_means.min()) / (cluster_means.max() - cluster_means.min())
+
+    plt.figure(figsize=(8, 6))
+    for cluster_id in normalized_means.index:
+        values = normalized_means.loc[cluster_id].tolist()
+        values += values[:1]
+        plt.polar(angles, values, label=f"Cluster {cluster_id}")
+        plt.fill(angles, values, alpha=0.1)
+
+    plt.xticks(angles[:-1], metrics, fontsize=10)
+    plt.title(f"Radar Plot of Normalized Combine Metrics (k = {k})")
+    plt.legend(loc='upper right', bbox_to_anchor=(1.1, 1.1))
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
